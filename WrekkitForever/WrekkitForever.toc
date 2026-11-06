@@ -2,7 +2,7 @@
 ## Title: Wrekkit Forever
 ## Notes: Threat list and mob frames for WoW Forever, from the game's own threat numbers.
 ## Author: Salahaja
-## Version: 0.2.1
+## Version: 0.3.0
 ## SavedVariables: WrekkitForeverDB
 
 core.lua

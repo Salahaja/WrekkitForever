@@ -1,13 +1,14 @@
 --[[ Mob frames: every enemy in combat, with its health, your threat on
      it, and your own debuffs on it.
 
-     The figure on the right:
+     The figure on the right, and the thin threat bar under each mob:
        you are tanking it   "hold 45%" - 100 minus the closest other
                             player's pull %; 0% means someone is about to
                             take it
-       you are not          your pull %, coloured by the game's aggro state
-     With hidden (secret) numbers, it is your pull % either way and the
-     name turns red when the game says you have aggro.
+       you are not          who has it and your pull %, "Tankyboi  82%",
+                            coloured by the game's aggro state
+     With hidden (secret) numbers it is who has it and your pull % either
+     way, and the name turns red when the game says you have aggro.
 
      Mobs come from your target and focus, enemy nameplates, what your
      group is targeting, and the boss frames. A mob nobody targets shows
@@ -19,6 +20,9 @@ local MF = {}
 W.mobs = MF
 
 local MAX_DEBUFFS = 5
+local THREAT_BAR_H = 3
+local TANK = CreateColor(0.45, 0.7, 1, 1)
+local NOT_TANK = CreateColor(1, 0.82, 0, 1)
 local AGGRO = CreateColor(1, 0.3, 0.3, 1)
 local PLAIN = CreateColor(1, 1, 1, 1)
 
@@ -65,6 +69,14 @@ local function makeRow(f, i)
   r.raid:SetPoint("LEFT", 6, 0)
   r.raid:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
   r.raid:Hide()
+  -- Your threat on the mob: a thin bar along the bottom of the row.
+  r.threat = CreateFrame("StatusBar", nil, r)
+  r.threat:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+  r.threat:SetMinMaxValues(0, 100)
+  r.threat:SetHeight(THREAT_BAR_H)
+  r.threat:SetPoint("BOTTOMLEFT")
+  r.threat:SetPoint("BOTTOMRIGHT")
+  r.threat:SetValue(0)
   return r
 end
 
@@ -183,28 +195,68 @@ local function paintRaidIcon(r, u)
   end
 end
 
+-- Who has the mob: its target's name, or nil.
+local function holder(u)
+  local t = u .. "target"
+  if not UnitExists(t) then return nil end
+  return UnitName(t)
+end
+
+-- The figure on the right and the threat bar along the bottom:
+--   you have it      "hold 45%"; the bar is your hold, blue
+--   someone else     "Tankyboi  82%" (who has it, your pull %); the bar is
+--                    your pull %, in the game's aggro colour
+--   not on its list  who has it, no bar
 local function paintThreat(r, u)
   local tanking, status, scaled = UnitDetailedThreatSituation("player", u)
-  if W.Readable(tanking) and W.Readable(scaled) then
+  local who = holder(u)
+  if W.Readable(tanking) and W.Readable(scaled) and W.Readable(status) then
+    who = W.Read(who)
     r.name:SetTextColor(1, 1, 1)
     if tanking == nil then
-      r.value:SetText("")
+      r.value:SetText(who or "")
+      r.value:SetTextColor(0.7, 0.7, 0.7)
+      r.threat:SetValue(0)
     elseif tanking then
-      r.value:SetFormattedText("hold %.0f%%", holdOn(u))
-      r.value:SetTextColor(0.45, 0.7, 1)
+      local h = holdOn(u)
+      r.value:SetFormattedText("hold %.0f%%", h)
+      r.value:SetTextColor(TANK:GetRGB())
+      r.threat:SetValue(h)
+      r.threat:SetStatusBarColor(TANK:GetRGB())
     else
-      r.value:SetFormattedText("%.0f%%", scaled or 0)
       local sr, sg, sb = UI.StatusColor(status)
-      if sr then r.value:SetTextColor(sr, sg, sb) else r.value:SetTextColor(1, 1, 1) end
+      if not sr then sr, sg, sb = 0.9, 0.9, 0.9 end
+      if who then
+        r.value:SetFormattedText("%s  %.0f%%", who, scaled or 0)
+      else
+        r.value:SetFormattedText("%.0f%%", scaled or 0)
+      end
+      r.value:SetTextColor(sr, sg, sb)
+      r.threat:SetValue(math.min(100, scaled or 0))
+      r.threat:SetStatusBarColor(sr, sg, sb)
     end
     return
   end
-  -- Hidden: show the number as it is, and let the game colour the name.
+  -- Hidden: the numbers and the name go on as they are; the game colours
+  -- the bar and the mob's name by whether you have aggro.
   r.value:SetTextColor(1, 1, 1)
-  local readableNil = W.Readable(scaled) and scaled == nil
-  if readableNil then r.value:SetText("") else r.value:SetFormattedText("%.0f%%", scaled) end
+  local noScaled = W.Readable(scaled) and scaled == nil
+  local noWho = W.Readable(who) and who == nil
+  if noScaled then
+    if noWho then r.value:SetText("") else r.value:SetText(who) end
+    r.threat:SetValue(0)
+  else
+    if noWho then
+      r.value:SetFormattedText("%.0f%%", scaled)
+    else
+      r.value:SetFormattedText("%s  %.0f%%", who, scaled)
+    end
+    r.threat:SetValue(scaled)
+  end
   local ok, c = pcall(C_CurveUtil.EvaluateColorFromBoolean, tanking, AGGRO, PLAIN)
   if ok and c then r.name:SetTextColor(c:GetRGB()) else r.name:SetTextColor(1, 1, 1) end
+  local okBar, b = pcall(C_CurveUtil.EvaluateColorFromBoolean, tanking, TANK, NOT_TANK)
+  if okBar and b then r.threat:SetStatusBarColor(b:GetRGB()) end
 end
 
 -- One debuff icon's timer: from the numbers when readable, else from the
@@ -243,8 +295,8 @@ end
 
 local SAMPLE = {
   { "Molten Giant", 82, "hold 41%", { 0.45, 0.7, 1 }, 8 },
-  { "Lava Surger", 55, "73%", { 1, 0.6, 0 } },
-  { "Firewalker", 100, "12%", { 1, 1, 1 } },
+  { "Lava Surger", 55, "Tankyboi  73%", { 1, 0.6, 0 } },
+  { "Firewalker", 100, "Tankyboi  12%", { 1, 1, 1 } },
 }
 
 local SAMPLE_ICONS = {

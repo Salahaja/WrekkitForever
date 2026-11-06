@@ -38,7 +38,7 @@ local Widget = {}
 -- Fields a test reads back (text, value, scripts...) are nil until set;
 -- any method name not stubbed below does nothing.
 local FIELDS = { text = 1, barValue = 1, shown = 1, color = 1, textColor = 1, texture = 1,
-  scripts = 1, cooldown = 1, raidIndex = 1, cd = 1, icons = 1, raid = 1, name = 1,
+  scripts = 1, cooldown = 1, threat = 1, raidIndex = 1, cd = 1, icons = 1, raid = 1, name = 1,
   title = 1, rows = 1, mark = 1, count = 1, tex = 1, kind = 1 }
 Widget.__index = function(t, k)
   local own = rawget(Widget, k)
@@ -115,12 +115,23 @@ local TOKENS = { target = "giant", nameplate1 = "giant", nameplate2 = "surger" }
 local nameplatesOn = true
 function GetCVarBool(name) if name == "nameplateShowEnemies" then return nameplatesOn end end
 local function mob(u) return MOBS[TOKENS[u]] end
+-- Who each mob is attacking: "<mob token>target" is that player.
+local HOLDER = { giant = "party1", surger = "player", walker = "party1" }
+local function holderOf(u)
+  local base = u:match("^(.+)target$")
+  local m = base and TOKENS[base]
+  return m and HOLDER[m]
+end
 
 function IsInRaid() return false end
 function GetNumSubgroupMembers() return 2 end
 function GetNumGroupMembers() return 3 end
-function UnitExists(u) return PARTY[u] ~= nil or mob(u) ~= nil end
-function UnitName(u) return PARTY[u] or (mob(u) and mob(u).name) end
+function UnitExists(u) return PARTY[u] ~= nil or mob(u) ~= nil or holderOf(u) ~= nil end
+function UnitName(u)
+  if PARTY[u] then return PARTY[u] end
+  if mob(u) then return mob(u).name end
+  if holderOf(u) then return maybe(PARTY[holderOf(u)]) end
+end
 function UnitClass(u) return "x", "WARRIOR" end
 -- Mob GUIDs are hidden in hidden mode, so duplicates need UnitIsUnit.
 function UnitGUID(u)
@@ -250,8 +261,10 @@ M:Update()
 check("mobs: both listed", mf.rows[2].shown, true)
 check("  your target and its nameplate once", mf.rows[3].shown, false)
 check("  your target first", mf.rows[1].name.text, "Molten Giant")
-check("  not tanking it: your pull %", mf.rows[1].value.text, "82%")
+check("  not tanking it: who has it and your pull %", mf.rows[1].value.text, "Tankyboi  82%")
+check("  your threat bar", mf.rows[1].threat.barValue, 82)
 check("  tanking the other: your hold", mf.rows[2].value.text, "hold 70%")
+check("  the bar is your hold", mf.rows[2].threat.barValue, 70)
 check("  your judgement on it", mf.rows[1].icons[1].shown, true)
 check("  with its timer", mf.rows[1].icons[1].cd.cooldown and mf.rows[1].icons[1].cd.cooldown[1], 98)
 check("  none on the other", mf.rows[2].icons[1].shown, false)
@@ -277,7 +290,10 @@ check("  the tank's bar is the tank colour", tankRow and tankRow.color[1], 0.33)
 M:Update()
 check("hidden mobs: both listed", mf.rows[2].shown, true)
 check("  still once each, with GUIDs hidden", mf.rows[3].shown, false)
-check("  your pull % as it is", mf.rows[1].value.text, "82%")
+check("  who has it and your pull %, as they are", mf.rows[1].value.text, "Tankyboi  82%")
+check("  your threat bar still fills", mf.rows[1].threat.barValue, 82)
+check("  coloured by the game: not yours", mf.rows[1].threat.color[2], 0.82)
+check("  yours", mf.rows[2].threat.color[1], 0.45)
 check("  aggro reddens the name", mf.rows[2].name.textColor[1], 1)
 check("  and not where you have none", mf.rows[1].name.textColor[2], 1)
 check("  judgement still shows", mf.rows[1].icons[1].shown, true)
