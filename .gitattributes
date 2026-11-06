@@ -1,0 +1,6 @@
+# Lua, the .toc and docs are text; normalise in the repo, checkout native.
+*.lua text
+*.toc text
+*.md  text
+*.yml text
+*.sh  text eol=lf
