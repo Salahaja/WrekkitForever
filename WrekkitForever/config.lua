@@ -68,7 +68,7 @@ function C:Init()
 
   header("Mob frames")
   checkbox("MOBS_SHOWN", mobs, "shown", "Show the mob frames", true,
-    "Enemies in combat, from their nameplates: enemy nameplates must be on.")
+    "Enemies in combat: your target and focus, what your group targets, boss frames, and enemy nameplates. A mob nobody targets shows only with enemy nameplates on (V).")
   checkbox("MOBS_DEBUFFS", mobs, "debuffs", "My debuffs on each mob", true,
     "Up to five of your own debuffs to the left of each mob, with their timers.")
   slider("MOBS_ROWS", mobs, "rows", "Rows", 8, 1, 40, 1, count)

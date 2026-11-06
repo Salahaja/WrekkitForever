@@ -107,25 +107,34 @@ local function maybe(v) if hide and v ~= nil then return secret(v) end return v 
 
 local PARTY = { player = "Salahaja", party1 = "Tankyboi", party2 = "Zylla" }
 local THREAT = {}         -- [mob][unit] = { tanking, status, scaled, raw, threat }
-local NAMES = { target = "Molten Giant", nameplate1 = "Molten Giant", nameplate2 = "Lava Surger" }
-local SAME = { nameplate1 = "target", target = "nameplate1" }
+-- Mobs, and the tokens each can be reached by. One mob can be several
+-- tokens at once (your target, a nameplate, a party member's target).
+local MOBS = { giant = { name = "Molten Giant", raid = 8 }, surger = { name = "Lava Surger" },
+               walker = { name = "Firewalker" } }
+local TOKENS = { target = "giant", nameplate1 = "giant", nameplate2 = "surger" }
+local nameplatesOn = true
+function GetCVarBool(name) if name == "nameplateShowEnemies" then return nameplatesOn end end
+local function mob(u) return MOBS[TOKENS[u]] end
 
 function IsInRaid() return false end
 function GetNumSubgroupMembers() return 2 end
 function GetNumGroupMembers() return 3 end
-function UnitExists(u) return PARTY[u] ~= nil or NAMES[u] ~= nil end
-function UnitName(u) return PARTY[u] or NAMES[u] end
+function UnitExists(u) return PARTY[u] ~= nil or mob(u) ~= nil end
+function UnitName(u) return PARTY[u] or (mob(u) and mob(u).name) end
 function UnitClass(u) return "x", "WARRIOR" end
-function UnitGUID(u) return "guid-" .. u end
-function UnitIsUnit(a, b) return a == b or SAME[a] == b end
-function UnitCanAttack(_, u) return NAMES[u] ~= nil end
+-- Mob GUIDs are hidden in hidden mode, so duplicates need UnitIsUnit.
+function UnitGUID(u)
+  if TOKENS[u] then return maybe("guid-" .. TOKENS[u]) end
+  return "guid-" .. u
+end
+function UnitIsUnit(a, b) return a == b or (TOKENS[a] ~= nil and TOKENS[a] == TOKENS[b]) end
+function UnitCanAttack(_, u) return mob(u) ~= nil end
 function UnitAffectingCombat(u) return true end
 function UnitHealth(u) return maybe(500) end
 function UnitHealthMax(u) return maybe(1000) end
-function GetRaidTargetIndex(u) if u == "nameplate1" or u == "target" then return maybe(8) end end
-function UnitDetailedThreatSituation(u, mob)
-  if mob == "target" then mob = "nameplate1" end
-  local t = THREAT[mob] and THREAT[mob][u]
+function GetRaidTargetIndex(u) local m = mob(u) if m and m.raid then return maybe(m.raid) end end
+function UnitDetailedThreatSituation(u, m)
+  local t = THREAT[TOKENS[m]] and THREAT[TOKENS[m]][u]
   if not t then return end
   return maybe(t[1]), maybe(t[2]), maybe(t[3]), maybe(t[4]), maybe(t[5])
 end
@@ -134,10 +143,10 @@ C_AddOns = { GetAddOnMetadata = function() return "test" end }
 C_CurveUtil = {
   EvaluateColorFromBoolean = function(b, yes, no) if reveal(b) then return yes end return no end,
 }
-local AURAS = { nameplate1 = { { icon = "judgement", duration = 10, expirationTime = 108, auraInstanceID = 7 } } }
+local AURAS = { giant = { { icon = "judgement", duration = 10, expirationTime = 108, auraInstanceID = 7 } } }
 C_UnitAuras = {
   GetAuraDataByIndex = function(u, i, filter)
-    local a = AURAS[u] and AURAS[u][i]
+    local a = AURAS[TOKENS[u]] and AURAS[TOKENS[u]][i]
     if not a then return nil end
     return { icon = a.icon, duration = maybe(a.duration), expirationTime = maybe(a.expirationTime),
              auraInstanceID = a.auraInstanceID }
@@ -196,15 +205,6 @@ W.Try = function(f, ...)
   return ok, r
 end
 
-local function plates()
-  for _, f in ipairs(frames) do
-    if f.scripts and f.scripts.OnEvent then
-      f.scripts.OnEvent(f, "NAME_PLATE_UNIT_ADDED", "nameplate1")
-      f.scripts.OnEvent(f, "NAME_PLATE_UNIT_ADDED", "nameplate2")
-    end
-  end
-end
-plates()
 
 local T, M = W.threat, W.mobs
 local tf, mf = T.frame, M.frame
@@ -213,12 +213,12 @@ local tf, mf = T.frame, M.frame
 -- Readable
 ----------------------------------------------------------------------
 
-THREAT.nameplate1 = {
+THREAT.giant = {
   party1 = { true, 3, 100, 100, 50000 },
   player = { false, 1, 82, 90, 45000 },
   party2 = { false, 0, 40, 44, 22000 },
 }
-THREAT.nameplate2 = {
+THREAT.surger = {
   player = { true, 3, 100, 100, 9000 },
   party2 = { false, 0, 30, 30, 2700 },
 }
@@ -232,7 +232,7 @@ check("  your bar", tf.rows[2].barValue, 82)
 check("  the title", tf.title.text, "Threat: Molten Giant")
 -- Two seconds on, your threat up by 2000 (hundredths): 10 a second.
 now = now + 2
-THREAT.nameplate1.player[5] = 47000
+THREAT.giant.player[5] = 47000
 T:Update()
 check("  threat per second", tf.rows[2].value.text, "10/s  82%")
 
@@ -248,6 +248,7 @@ T:Apply()
 
 M:Update()
 check("mobs: both listed", mf.rows[2].shown, true)
+check("  your target and its nameplate once", mf.rows[3].shown, false)
 check("  your target first", mf.rows[1].name.text, "Molten Giant")
 check("  not tanking it: your pull %", mf.rows[1].value.text, "82%")
 check("  tanking the other: your hold", mf.rows[2].value.text, "hold 70%")
@@ -275,6 +276,7 @@ check("  the tank's bar is the tank colour", tankRow and tankRow.color[1], 0.33)
 
 M:Update()
 check("hidden mobs: both listed", mf.rows[2].shown, true)
+check("  still once each, with GUIDs hidden", mf.rows[3].shown, false)
 check("  your pull % as it is", mf.rows[1].value.text, "82%")
 check("  aggro reddens the name", mf.rows[2].name.textColor[1], 1)
 check("  and not where you have none", mf.rows[1].name.textColor[2], 1)
@@ -288,8 +290,28 @@ print("  (hidden mode: " .. quiet .. " quiet fallbacks)")
 ----------------------------------------------------------------------
 
 hide = false
-NAMES.target = nil
-SAME.nameplate1 = nil
+
+-- Nameplates off, two mobs on you: your target, and the one your tank has.
+nameplatesOn = false
+TOKENS = { target = "giant", party1target = "walker", party2target = "giant" }
+M:Update()
+check("nameplates off: both mobs still listed", mf.rows[2].shown, true)
+check("  your target first", mf.rows[1].name.text, "Molten Giant")
+check("  then the tank's", mf.rows[2].name.text, "Firewalker")
+check("  not twice", mf.rows[3].shown, false)
+check("  the title says nameplates are off", mf.title.text, "Mobs (2)  nameplates off: V")
+-- A mob with only a nameplate (nobody targets it).
+nameplatesOn = true
+TOKENS = { nameplate3 = "surger", nameplate7 = "walker" }
+M:Update()
+check("untargeted mobs from nameplates", mf.rows[2].shown, true)
+check("  boss frames too", (function()
+  TOKENS = { boss1 = "giant" }
+  M:Update()
+  return mf.rows[1].name.text
+end)(), "Molten Giant")
+TOKENS = { nameplate1 = "giant", nameplate2 = "surger" }
+
 T:Update()
 check("no target: empty frame while unlocked", tf.title.text, "Threat: no target")
 W.db.locked = true

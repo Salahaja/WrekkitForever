@@ -1,5 +1,5 @@
---[[ Mob frames: every enemy in combat that has a nameplate, with its
-     health, your threat on it, and your own debuffs on it.
+--[[ Mob frames: every enemy in combat, with its health, your threat on
+     it, and your own debuffs on it.
 
      The figure on the right:
        you are tanking it   "hold 45%" - 100 minus the closest other
@@ -9,7 +9,9 @@
      With hidden (secret) numbers, it is your pull % either way and the
      name turns red when the game says you have aggro.
 
-     Needs enemy nameplates on (V), since the mobs come from them. ]]
+     Mobs come from your target and focus, enemy nameplates, what your
+     group is targeting, and the boss frames. A mob nobody targets shows
+     only with enemy nameplates on (V). ]]
 
 local W = WrekkitForever
 local UI = W.UI
@@ -20,7 +22,6 @@ local MAX_DEBUFFS = 5
 local AGGRO = CreateColor(1, 0.3, 0.3, 1)
 local PLAIN = CreateColor(1, 1, 1, 1)
 
-local plates = {}         -- nameplate unit token -> true
 local list = {}
 local units = {}
 
@@ -89,32 +90,60 @@ local function wanted(u)
   return true
 end
 
-local function isTarget(u)
-  return W.Read(UnitIsUnit(u, "target")) == true
+-- Where enemies can be found, best first: your target and focus, every
+-- nameplate (the only way to see a mob nobody targets), what each group
+-- member is targeting, and the boss frames.
+local SOURCES = { "target", "focus" }
+for i = 1, 40 do SOURCES[#SOURCES + 1] = "nameplate" .. i end
+local BOSSES = {}
+for i = 1, 8 do BOSSES[i] = "boss" .. i end
+
+local seen, kept = {}, {}
+
+-- Already listed under another token? By GUID when the game shows it,
+-- else by asking whether the two tokens are the same unit.
+local function duplicate(u, n)
+  local guid = W.Read(UnitGUID(u))
+  if guid then
+    if seen[guid] then return true end
+    seen[guid] = true
+    return false
+  end
+  for i = 1, n do
+    if W.Read(UnitIsUnit(u, kept[i])) == true then return true end
+  end
+  return false
 end
 
--- Enemies to list: your target first, then the rest by nameplate.
-local function collect()
-  for k in pairs(list) do list[k] = nil end
-  local n = 0
-  for u in pairs(plates) do
-    local ok, yes = pcall(wanted, u)
-    if ok and yes then
-      n = n + 1
-      list[n] = u
-    end
-  end
-  table.sort(list, function(a, b)
-    local ta, tb = isTarget(a), isTarget(b)
-    if ta ~= tb then return ta end
-    return a < b
-  end)
-  -- No nameplates (they are off): at least your target.
-  if n == 0 and UnitExists("target") then
-    local ok, yes = pcall(wanted, "target")
-    if ok and yes then n = 1; list[1] = "target" end
-  end
+local function consider(u, n)
+  local ok, yes = pcall(wanted, u)
+  if not (ok and yes) then return n end
+  local okDup, dup = pcall(duplicate, u, n)
+  if okDup and dup then return n end
+  n = n + 1
+  kept[n] = u
   return n
+end
+
+-- Enemies to list, your target first.
+local function collect()
+  for k in pairs(seen) do seen[k] = nil end
+  for k in pairs(kept) do kept[k] = nil end
+  local n = 0
+  for _, u in ipairs(SOURCES) do n = consider(u, n) end
+  local count = W.GroupUnits(units)
+  for i = 1, count do
+    local u = units[i]
+    n = consider(u == "player" and "target" or u .. "target", n)
+  end
+  for _, u in ipairs(BOSSES) do n = consider(u, n) end
+  for k in pairs(list) do list[k] = nil end
+  for i = 1, n do list[i] = kept[i] end
+  return n
+end
+
+local function nameplatesOff()
+  return GetCVarBool and not GetCVarBool("nameplateShowEnemies")
 end
 
 -- 100 minus the closest other player's pull % on the mob.
@@ -272,7 +301,7 @@ function MF:Update()
   if n == 0 then
     for i = 1, #f.rows do f.rows[i]:Hide() end
     if W.db.locked then f:Hide() return end
-    f.title:SetText("Mobs: none in combat")
+    f.title:SetText(nameplatesOff() and "Mobs: none (enemy nameplates off: V)" or "Mobs: none in combat")
     f:Fit(0)
     f:Show()
     return
@@ -291,16 +320,9 @@ function MF:Update()
     r:Show()
   end
   for i = rows + 1, #f.rows do f.rows[i]:Hide() end
-  f.title:SetFormattedText("Mobs (%d)", n)
+  f.title:SetFormattedText(nameplatesOff() and "Mobs (%d)  nameplates off: V" or "Mobs (%d)", n)
   f:Fit(rows)
   f:Show()
 end
-
-local ev = CreateFrame("Frame")
-ev:RegisterEvent("NAME_PLATE_UNIT_ADDED")
-ev:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
-ev:SetScript("OnEvent", function(_, event, unit)
-  if event == "NAME_PLATE_UNIT_ADDED" then plates[unit] = true else plates[unit] = nil end
-end)
 
 W.Register(MF)
