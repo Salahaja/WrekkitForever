@@ -1,0 +1,11 @@
+## Interface: 16001
+## Title: Wrekkit Forever
+## Notes: Threat list and mob frames for WoW Forever, from the game's own threat numbers.
+## Author: Salahaja
+## Version: 0.1.0
+## SavedVariables: WrekkitForeverDB
+
+core.lua
+widgets.lua
+threat.lua
+mobs.lua
