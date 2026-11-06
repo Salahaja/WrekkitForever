@@ -166,6 +166,76 @@ C_UnitAuras = {
   GetAuraApplicationDisplayCount = function() return "" end,
 }
 
+-- The game's damage meter: one current pull and one older one.
+Enum = {
+  DamageMeterType = { DamageDone = 0, Dps = 1, HealingDone = 2, Hps = 3, Absorbs = 4, Interrupts = 5,
+    Dispels = 6, DamageTaken = 7, AvoidableDamageTaken = 8, Deaths = 9, EnemyDamageTaken = 10 },
+  DamageMeterSessionType = { Overall = 0, Current = 1, Expired = 2 },
+}
+local meterOn = true
+local SOURCES = {         -- as the game hands them over: biggest first
+  { name = "Doegertz", guid = "g-doe", class = "MAGE", total = 400000, rate = 2000, recap = 0 },
+  { name = "Salahaja", guid = "g-sal", class = "PALADIN", total = 300000, rate = 1500, recap = 11, died = 75 },
+  { name = "Nuse", guid = "g-nuse", class = "WARLOCK", total = 300000, rate = 1500, recap = 0 },
+}
+local SPELLS = {          -- Salahaja's, in no particular order
+  { spellID = 20271, total = 100000, creature = "" },
+  { spellID = 6603, total = 200000, creature = "", deadly = true },
+}
+local asked = {}
+local function sourceRow(src, mtype)
+  local isMe = src.name == "Salahaja"
+  return { name = maybe(src.name), sourceGUID = maybe(src.guid), classFilename = src.class,
+    totalAmount = maybe(src.total), amountPerSecond = maybe(src.rate), isLocalPlayer = isMe,
+    deathRecapID = src.recap, deathTimeSeconds = maybe(src.died or 0) }
+end
+C_DamageMeter = {
+  IsDamageMeterAvailable = function() if meterOn then return true, "" end return false, "Damage meter is disabled" end,
+  GetCombatSessionFromType = function(st, mtype)
+    asked.sessionType, asked.type = st, mtype
+    local list = {}
+    for i, src in ipairs(SOURCES) do list[i] = sourceRow(src, mtype) end
+    return { combatSources = list, maxAmount = maybe(400000), totalAmount = maybe(1000000) }
+  end,
+  GetCombatSessionFromID = function(id, mtype)
+    asked.sessionID = id
+    if id ~= 5 then return nil end
+    return { combatSources = { sourceRow(SOURCES[3], mtype) }, maxAmount = maybe(300000), totalAmount = maybe(300000) }
+  end,
+  GetCombatSessionSourceFromType = function(st, mtype, guid)
+    asked.sourceGUID = guid
+    local list = {}
+    for i, sp in ipairs(SPELLS) do
+      list[i] = { spellID = maybe(sp.spellID), totalAmount = maybe(sp.total), creatureName = maybe(sp.creature),
+        isAvoidable = maybe(false), isDeadly = maybe(sp.deadly == true) }
+    end
+    return { combatSpells = list, totalAmount = maybe(300000), maxAmount = maybe(200000) }
+  end,
+  GetAvailableCombatSessions = function() return { { sessionID = 5, name = "Magmadar", durationSeconds = 83 } } end,
+  ResetAllCombatSessions = function() asked.reset = true end,
+}
+function AbbreviateLargeNumbers(n)
+  n = reveal(n)
+  if n >= 1000 then return string.format("%.0fK", n / 1000) end
+  return tostring(n)
+end
+local recapOpened
+function OpenDeathRecapUI(id) recapOpened = id end
+C_Spell = { GetSpellName = function(id)
+  if isSecret(id) then error("secret argument") end
+  return ({ [20271] = "Judgement", [6603] = "Attack" })[id]
+end }
+local menu
+MenuUtil = { CreateContextMenu = function(owner, gen)
+  menu = { radios = {}, buttons = {} }
+  local root = {
+    CreateTitle = function() end, CreateDivider = function() end,
+    CreateRadio = function(_, label, isSel, set) menu.radios[label] = { isSel = isSel, set = set } end,
+    CreateButton = function(_, label, f) menu.buttons[label] = f end,
+  }
+  gen(owner, root)
+end }
+
 -- The options panel: remembers each proxy setting by its variable name.
 local proxies, registered, opened = {}, nil, nil
 Settings = {
@@ -194,7 +264,7 @@ function CreateSettingsButtonInitializer() return {} end
 ----------------------------------------------------------------------
 
 local ADDON = "WrekkitForever"
-for _, file in ipairs({ "core.lua", "widgets.lua", "threat.lua", "mobs.lua", "config.lua" }) do
+for _, file in ipairs({ "core.lua", "widgets.lua", "threat.lua", "mobs.lua", "meter.lua", "config.lua" }) do
   local chunk = assert(loadfile(ADDON .. "/" .. file))
   chunk(ADDON)
 end
@@ -369,6 +439,85 @@ check("  sample rows on", W.test, true)
 p.WREKKITFOREVER_SAMPLE.set(false)
 SlashCmdList.WREKKITFOREVER("config")
 check("/wf config opens it", opened, 42)
+
+----------------------------------------------------------------------
+-- Meter
+----------------------------------------------------------------------
+
+local MT = W.meter
+local mtf = MT.frame
+W.test = false
+hide = false
+check("meter: off by default", W.db.meter.shown, false)
+SlashCmdList.WREKKITFOREVER("meter")
+check("  /wf meter shows it", mtf.shown, true)
+MT:Refresh()
+check("  the game's order", mtf.rows[1].name.text, "Doegertz")
+check("  damage, per second, share", mtf.rows[1].value.text, "400K (2K)  40%")
+check("  bars against the top", mtf.rows[2].barValue, 300000)
+check("  class colour", mtf.rows[1].color and mtf.rows[1].color[1], RAID_CLASS_COLORS.MAGE.r)
+check("  the title", mtf.title.text, "Damage: Current")
+check("  current pull asked for", asked.sessionType, 1)
+
+-- Pinned: one row, you are second.
+W.db.meter.rows = 1
+MT:Apply()
+check("  your row pinned", mtf.rows[1].name.text, "Salahaja")
+W.db.meter.rows = 10
+MT:Apply()
+
+-- Click a player: their spells, biggest first.
+mtf.rows[2].scripts.OnMouseUp(mtf.rows[2], "LeftButton")
+local d = MT.detail
+check("breakdown: opens", d.shown, true)
+check("  for that player", asked.sourceGUID, "g-sal")
+check("  biggest first", d.rows[1].name.text, "Attack")
+check("  with its share", d.rows[1].value.text, "200K  67%")
+check("  a deadly one is marked", d.rows[1].mark.shown, true)
+check("  the title", d.title.text, "Salahaja: Damage")
+mtf.rows[2].scripts.OnMouseUp(mtf.rows[2], "LeftButton")
+check("  the same click closes it", d.shown, false)
+
+-- The menu: DPS, then an older pull, then deaths.
+mtf.titleBar.scripts.OnMouseUp(mtf.titleBar, "RightButton")
+check("menu: every kind listed", menu.radios["Avoidable damage"] ~= nil, true)
+check("  the older pull, with its length", menu.radios["Magmadar  1:23"] ~= nil, true)
+menu.radios["DPS"].set()
+check("  DPS first", mtf.rows[1].value.text, "2K (400K)  40%")
+check("  asked as DPS", asked.type, 1)
+menu.radios["Magmadar  1:23"].set()
+check("  the older pull", mtf.rows[1].name.text, "Nuse")
+check("  its name in the title", mtf.title.text, "DPS: Magmadar")
+menu.radios["Current"].set()
+menu.radios["Deaths"].set()
+check("deaths: the time", mtf.rows[2].value.text, "1:15")
+mtf.rows[2].scripts.OnMouseUp(mtf.rows[2], "LeftButton")
+check("  click opens Blizzard's death recap", recapOpened, 11)
+menu.buttons["Reset all pulls"]()
+check("reset: asks the game", asked.reset, true)
+W.db.meter.metric = "DamageDone"
+
+-- Hidden (in combat): shown as-is, no shares, no breakdown.
+hide = true
+quiet = 0
+MT:Refresh()
+check("hidden: still listed", mtf.rows[3].shown, true)
+check("  in the game's order", mtf.rows[1].name.text, "Doegertz")
+check("  numbers as they are", mtf.rows[1].value.text, "400K (2K)")
+check("  the bar still fills", mtf.rows[1].barValue, 400000)
+mtf.rows[2].scripts.OnMouseUp(mtf.rows[2], "LeftButton")
+check("  no breakdown until the pull ends", d.shown, false)
+print("  (meter hidden mode: " .. quiet .. " quiet fallbacks)")
+hide = false
+
+-- Not available: says why.
+meterOn = false
+MT:Refresh()
+check("unavailable: the title says why", mtf.title.text, "Meter: Damage meter is disabled")
+check("  no rows", mtf.rows[1].shown, false)
+meterOn = true
+SlashCmdList.WREKKITFOREVER("meter")
+check("/wf meter hides it again", mtf.shown, false)
 
 print(string.format("%d checks, %d failed", checks, failures))
 os.exit(failures == 0 and 0 or 1)

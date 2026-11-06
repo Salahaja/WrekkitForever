@@ -75,6 +75,15 @@ function C:Init()
   slider("MOBS_WIDTH", mobs, "width", "Width", 220, 120, 600, 10, pixels)
   slider("MOBS_SCALE", mobs, "scale", "Size", 100, 50, 200, 5, percent)
 
+  local meter = function() return W.db.meter end
+  header("Meter")
+  checkbox("METER_SHOWN", meter, "shown", "Show the meter", false,
+    "Blizzard's own damage meter numbers, per pull. Right-click its title for damage, healing, interrupts, deaths and older pulls; click a player for their spells.")
+  checkbox("METER_PIN", meter, "pinMe", "Keep my row on the meter", true)
+  slider("METER_ROWS", meter, "rows", "Rows", 10, 1, 40, 1, count)
+  slider("METER_WIDTH", meter, "width", "Width", 240, 120, 600, 10, pixels)
+  slider("METER_SCALE", meter, "scale", "Size", 100, 50, 200, 5, percent)
+
   Settings.RegisterAddOnCategory(category)
 end
 

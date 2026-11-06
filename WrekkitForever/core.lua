@@ -18,6 +18,8 @@ local DEFAULTS = {
   locked = false,
   threat = { shown = true, width = 200, rows = 10, scale = 100, pinMe = true },
   mobs = { shown = true, width = 220, rows = 8, scale = 100, debuffs = true },
+  meter = { shown = false, width = 240, rows = 10, scale = 100, pinMe = true,
+            metric = "DamageDone", session = "current" },
 }
 
 ----------------------------------------------------------------------
@@ -147,11 +149,12 @@ local HELP = {
   "/wf config - the options page (also Esc > Options > AddOns)",
   "/wf threat - show or hide the threat list",
   "/wf mobs - show or hide the mob frames",
+  "/wf meter - show or hide the meter (right-click its title for more)",
   "/wf lock - lock or unlock both (drag the title to move)",
   "/wf test - fill both with sample rows to place them",
-  "/wf rows <threat|mobs> <n> - how many rows",
-  "/wf width <threat|mobs> <px> - width",
-  "/wf scale <threat|mobs> <50-200> - size in percent",
+  "/wf rows <threat|mobs|meter> <n> - how many rows",
+  "/wf width <threat|mobs|meter> <px> - width",
+  "/wf scale <threat|mobs|meter> <50-200> - size in percent",
   "/wf debuffs - your debuffs on the mob frames on or off",
   "/wf pin - keep your own row on the threat list",
   "/wf reset - put both back in the middle of the screen",
@@ -165,8 +168,8 @@ local function toggle(t, key, label)
 end
 
 local function which(word)
-  if word == "threat" or word == "mobs" then return W.db[word] end
-  W.Print("say threat or mobs")
+  if word == "threat" or word == "mobs" or word == "meter" then return W.db[word] end
+  W.Print("say threat, mobs or meter")
 end
 
 SLASH_WREKKITFOREVER1 = "/wf"
@@ -175,6 +178,7 @@ SlashCmdList.WREKKITFOREVER = function(msg)
   local cmd, a, b = strsplit(" ", strlower(strtrim(msg or "")))
   if cmd == "threat" then toggle(W.db.threat, "shown", "threat list")
   elseif cmd == "mobs" then toggle(W.db.mobs, "shown", "mob frames")
+  elseif cmd == "meter" then toggle(W.db.meter, "shown", "meter")
   elseif cmd == "lock" then toggle(W.db, "locked", "locked")
   elseif cmd == "pin" then toggle(W.db.threat, "pinMe", "pin your row")
   elseif cmd == "debuffs" then toggle(W.db.mobs, "debuffs", "your debuffs")
@@ -210,7 +214,14 @@ end
 -- What the game lets addons read right now, against your target.
 function W.Check()
   local mob = W.WatchedMob()
-  if not mob then W.Print("target a mob first") return end
+  if not mob then
+    W.Print("target a mob for the threat and aura checks")
+    if W.meter then
+      local yes, why = W.meter.Available()
+      W.Print("damage meter: " .. (yes and "|cff6fd46favailable|r" or ("|cffd44f53off|r (" .. tostring(W.Read(why)) .. ")")))
+    end
+    return
+  end
   local function say(label, secret)
     W.Print(label .. ": " .. (secret and "|cffd44f53hidden|r" or "|cff6fd46freadable|r"))
   end
@@ -222,5 +233,9 @@ function W.Check()
     say("who has aggro", S.ShouldUnitThreatStateBeSecret("player", mob))
   end
   if S and S.ShouldAurasBeSecret then say("auras", S.ShouldAurasBeSecret()) end
+  if W.meter then
+    local yes, why = W.meter.Available()
+    W.Print("damage meter: " .. (yes and "|cff6fd46favailable|r" or ("|cffd44f53off|r (" .. tostring(W.Read(why)) .. ")")))
+  end
   if not S then W.Print("no secret values on this client: everything is readable") end
 end
