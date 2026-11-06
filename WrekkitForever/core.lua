@@ -113,6 +113,8 @@ local function each(method)
   end
 end
 
+function W.ApplyAll() each("Apply") end
+
 ----------------------------------------------------------------------
 -- Events and the update tick
 ----------------------------------------------------------------------
@@ -142,6 +144,7 @@ end)
 ----------------------------------------------------------------------
 
 local HELP = {
+  "/wf config - the options page (also Esc > Options > AddOns)",
   "/wf threat - show or hide the threat list",
   "/wf mobs - show or hide the mob frames",
   "/wf lock - lock or unlock both (drag the title to move)",
@@ -191,6 +194,8 @@ SlashCmdList.WREKKITFOREVER = function(msg)
     t[cmd] = math.max(lo, math.min(hi, math.floor(n)))
     W.Print(a .. " " .. cmd .. ": " .. t[cmd])
     each("Apply")
+  elseif cmd == "config" or cmd == "options" then
+    W.config:Open()
   elseif cmd == "check" then
     W.Check()
   elseif cmd == "debug" then

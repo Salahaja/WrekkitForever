@@ -146,12 +146,35 @@ C_UnitAuras = {
   GetAuraApplicationDisplayCount = function() return "" end,
 }
 
+-- The options panel: remembers each proxy setting by its variable name.
+local proxies, registered, opened = {}, nil, nil
+Settings = {
+  VarType = { Boolean = "boolean", Number = "number", String = "string" },
+  RegisterVerticalLayoutCategory = function(name)
+    local cat = { name = name, GetID = function() return 42 end }
+    return cat, { AddInitializer = function() end }
+  end,
+  RegisterProxySetting = function(cat, var, kind, name, default, get, set)
+    local s = { get = get, set = set, default = default, kind = kind }
+    proxies[var] = s
+    return s
+  end,
+  CreateCheckbox = function() end,
+  CreateSlider = function() end,
+  CreateSliderOptions = function() return { SetLabelFormatter = function() end } end,
+  RegisterAddOnCategory = function(cat) registered = cat end,
+  OpenToCategory = function(id) opened = id end,
+}
+MinimalSliderWithSteppersMixin = { Label = { Right = 1 } }
+function CreateSettingsListSectionHeaderInitializer() return {} end
+function CreateSettingsButtonInitializer() return {} end
+
 ----------------------------------------------------------------------
 -- Load
 ----------------------------------------------------------------------
 
 local ADDON = "WrekkitForever"
-for _, file in ipairs({ "core.lua", "widgets.lua", "threat.lua", "mobs.lua" }) do
+for _, file in ipairs({ "core.lua", "widgets.lua", "threat.lua", "mobs.lua", "config.lua" }) do
   local chunk = assert(loadfile(ADDON .. "/" .. file))
   chunk(ADDON)
 end
@@ -284,6 +307,30 @@ check("/wf rows", W.db.threat.rows, 3)
 SlashCmdList.WREKKITFOREVER("threat")
 check("/wf threat hides it", tf.shown, false)
 SlashCmdList.WREKKITFOREVER("")
+
+----------------------------------------------------------------------
+-- Options page
+----------------------------------------------------------------------
+
+check("options: the page is registered", registered and registered.name, "Wrekkit Forever")
+local p = proxies
+check("  every control has a setting", p.WREKKITFOREVER_LOCKED and p.WREKKITFOREVER_MOBS_SCALE and true, true)
+for var, s in pairs(p) do
+  check("  " .. var .. " reads back", type(s.get()), s.kind)
+  check("  " .. var .. " default matches", s.default == s.get() or var == "WREKKITFOREVER_THREAT_SHOWN"
+    or var == "WREKKITFOREVER_THREAT_ROWS", true)
+end
+p.WREKKITFOREVER_THREAT_SHOWN.set(true)
+check("  show the threat list", tf.shown, true)
+p.WREKKITFOREVER_THREAT_WIDTH.set(300)
+check("  width saved", W.db.threat.width, 300)
+p.WREKKITFOREVER_MOBS_DEBUFFS.set(false)
+check("  debuffs off saved", W.db.mobs.debuffs, false)
+p.WREKKITFOREVER_SAMPLE.set(true)
+check("  sample rows on", W.test, true)
+p.WREKKITFOREVER_SAMPLE.set(false)
+SlashCmdList.WREKKITFOREVER("config")
+check("/wf config opens it", opened, 42)
 
 print(string.format("%d checks, %d failed", checks, failures))
 os.exit(failures == 0 and 0 or 1)
