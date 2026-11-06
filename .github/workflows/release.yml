@@ -1,0 +1,51 @@
+# Publish a release when a version tag (v1.2.3) is pushed, or when run by
+# hand from the Actions tab (it then tags the commit with the .toc version).
+#
+# Builds WrekkitForever-<version>.zip with the addon inside a folder named
+# "WrekkitForever" -- the client only loads an addon whose folder matches its
+# .toc, which GitHub's own "Source code" archives do not -- and attaches it to
+# a release whose notes are .github/release-notes.md.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version from the .toc (and check a pushed tag matches it)
+        run: |
+          toc="$(sed -n 's/^## Version: *//p' WrekkitForever/WrekkitForever.toc | tr -d '\r')"
+          echo "toc $toc"
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            test "${GITHUB_REF_NAME#v}" = "$toc"
+          fi
+          echo "VERSION=$toc" >> "$GITHUB_ENV"
+
+      - name: Tests
+        run: |
+          sudo apt-get install -y -qq lua5.4 > /dev/null
+          lua5.4 tools/test.lua
+
+      - name: Build the addon zip
+        run: |
+          mkdir -p dist
+          cp -r WrekkitForever dist/
+          cd dist && zip -qr "WrekkitForever-${VERSION}.zip" WrekkitForever
+          unzip -l "WrekkitForever-${VERSION}.zip"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          target_commitish: ${{ github.sha }}
+          name: Wrekkit Forever ${{ env.VERSION }}
+          body_path: .github/release-notes.md
+          files: dist/WrekkitForever-${{ env.VERSION }}.zip
