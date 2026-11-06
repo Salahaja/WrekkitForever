@@ -294,9 +294,9 @@ local function paintDebuffs(r, u)
 end
 
 local SAMPLE = {
-  { "Molten Giant", 82, "hold 41%", { 0.45, 0.7, 1 }, 8 },
-  { "Lava Surger", 55, "Tankyboi  73%", { 1, 0.6, 0 } },
-  { "Firewalker", 100, "Tankyboi  12%", { 1, 1, 1 } },
+  { "Molten Giant", 82, "hold 41%", { 0.45, 0.7, 1 }, 8, 41 },
+  { "Lava Surger", 55, "Tankyboi  73%", { 1, 0.6, 0 }, nil, 73 },
+  { "Firewalker", 100, "Tankyboi  12%", { 0.9, 0.9, 0.9 }, nil, 12 },
 }
 
 local SAMPLE_ICONS = {
@@ -315,6 +315,8 @@ local function sample(f, rows)
     r.name:SetTextColor(1, 1, 1)
     r.value:SetText(s[3])
     r.value:SetTextColor(s[4][1], s[4][2], s[4][3])
+    r.threat:SetValue(s[6])
+    r.threat:SetStatusBarColor(s[4][1], s[4][2], s[4][3])
     if s[5] then
       SetRaidTargetIconTexture(r.raid, s[5])
       r.raid:Show()
